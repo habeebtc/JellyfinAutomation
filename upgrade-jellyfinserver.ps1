@@ -68,7 +68,7 @@ if($register)
     }
    
     Register-ScheduledTask -TaskName UpgradeJellyFin -InputObject $newTask -Password $credential.GetNetworkCredential().Password -User $credential.UserName
-
+    log -msg "Successfully recreated UpgradeJellyFin scheduled task for every $dayofWeek at $timeOfDay"
     exit
 }
 
