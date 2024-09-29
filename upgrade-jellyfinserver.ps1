@@ -1,3 +1,4 @@
+param ($register = $false, $dayofWeek = 'Monday', $timeOfDay = '2:00 AM')
 #update-jellyfin
 <#
 
@@ -5,8 +6,6 @@
 
 if x64: https://repo.jellyfin.org/?path=/server/windows/latest-stable/amd64
 if ARM: https://repo.jellyfin.org/?path=/server/windows/latest-stable/arm64
-
-This only works with amd64, because that is all that has a self-installer.  The zip-deployers will almost assuredly have a custom setup, which they will have to write their own upgrade script for.
 
 2. Determine if the version available is higher than what's installed.
 
@@ -46,6 +45,34 @@ function is-newVersionAvailable()
     }
     return $false
 }
+
+if($register)
+{
+    log -msg "Script running in Register mode!"
+    # Check for existing scheduled task
+    $credential = Get-Credential -Message "Provide your local admin account credentials for Jellyfin Auto-Update Task"
+
+    $task = Get-ScheduledTask -TaskName "UpgradeJellyFin" -ErrorAction Ignore
+
+    # Create new task
+    $action = New-ScheduledTaskAction -Execute "$env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -Argument "-file `"$($MyInvocation.MyCommand.Path)`""
+    $settings = New-ScheduledTaskSettingsSet
+    $principal = New-ScheduledTaskPrincipal -UserId $credential.UserName -LogonType Password  -RunLevel Highest
+    $trigger = New-ScheduledTaskTrigger -DaysOfWeek $dayofWeek -At $timeOfDay -Weekly
+    $newTask = New-ScheduledTask -Action $action -Description "Jellyfin Windows Auto-Update script" -Principal $principal -Settings $settings -Trigger $trigger
+
+    if($task -ne $null)
+    {
+        # Remove existing task and recreate it.
+        Unregister-ScheduledTask -TaskName UpgradeJellyFin -Confirm:$false
+    }
+   
+    Register-ScheduledTask -TaskName UpgradeJellyFin -InputObject $newTask -Password $credential.GetNetworkCredential().Password -User $credential.UserName
+
+    exit
+}
+
+log -msg "Begin update check!"
 
 if(is-newVersionAvailable)
 {
@@ -120,3 +147,5 @@ if(is-newVersionAvailable)
         exit
     }
 }
+
+log -msg "End update check!"
