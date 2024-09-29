@@ -23,26 +23,40 @@ function log($msg, $foregroundcolor = "white")
 
 function Check-AvailableJellyFinVersion()
 {
-    $updatePage = (Invoke-WebRequest -Uri "https://repo.jellyfin.org/?path=/server/windows/latest-stable/$env:PROCESSOR_ARCHITECTURE)").Content
-    $currentVersion = [regex]::match($updatePage,"(?<=\(v).+(?=\))").Groups[0].Value
+    try
+    {
+        log -msg "Checking update page: https://repo.jellyfin.org/?path=/server/windows/latest-stable/$env:PROCESSOR_ARCHITECTURE)"
+        $updatePage = (Invoke-WebRequest -Uri "https://repo.jellyfin.org/?path=/server/windows/latest-stable/$env:PROCESSOR_ARCHITECTURE)").Content
+        $currentVersion = [regex]::match($updatePage,"(?<=\(v).+(?=\))").Groups[0].Value
+    }
+    catch
+    {
+        log -msg "Failed to connect to update page: https://repo.jellyfin.org/?path=/server/windows/latest-stable/$env:PROCESSOR_ARCHITECTURE)"
+        log -msg "Exception $($_.Message)"
+    }
+    log -msg "Check-AvailableJellyFinVersion returning $currentVersion"
     return $currentVersion
 }
 
-function get-installedJellyFinVersion()
+function Get-InstalledJellyFinVersion()
 {
+    
     $JellyFinVer = (Get-ItemProperty -Path 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\JellyfinServer\' -Name 'DisplayVersion').DisplayVersion
+    log -msg "Get-InstalledJellyFinVersion returning $JellyFinVer"
     return $JellyFinVer
 }
 
 
 function is-newVersionAvailable()
 {
-    [version]$installedVer = get-installedJellyFinVersion
+    [version]$installedVer = Get-InstalledJellyFinVersion
     [version]$currentVersion = Check-AvailableJellyFinVersion
     if($installedVer -lt $currentVersion -and $env:PROCESSOR_ARCHITECTURE -eq "AMD64")
     {
+        log -msg "New version appears to be available!"
         return $true
     }
+    log -msg "No newer version available; exiting"
     return $false
 }
 
@@ -114,8 +128,8 @@ if(is-newVersionAvailable)
 
         Invoke-WebRequest -Uri $downloadLink -OutFile "$env:TEMP\JellyFinUpdate.exe"
 
-        log -msg "Executing update package silent command: $env:TEMP\JellyFinUpdate.exe /S"
-        $process = start-process -FilePath "$env:TEMP\JellyFinUpdate.exe" -ArgumentList "/S"
+        log -msg "Executing update package silent command: $env:TEMP\JellyFinUpdate.exe /S /_SERVICESTART_=No"
+        $process = start-process -FilePath "$env:TEMP\JellyFinUpdate.exe" -ArgumentList "/S /_SERVICESTART_=No"
         $process.WaitForExit()
 
         if($process.ExitCode -ne 0)
