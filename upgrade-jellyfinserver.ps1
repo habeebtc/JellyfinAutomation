@@ -18,21 +18,21 @@ if ARM: https://repo.jellyfin.org/?path=/server/windows/latest-stable/arm64
 function log($msg, $foregroundcolor = "white")
 {
     Write-Host $msg -ForegroundColor $foregroundcolor
-    "$(get-date): $msg" | Out-File -FilePath (join-path -path $ENV:TEMP -childpath "JellyFinUpdater.log") -Append
+    "$(get-date): $msg" | Out-File -FilePath (join-path -path $ENV:TEMP -childpath "JellyFinAutoUpdater.log") -Append
 }
 
 function Check-AvailableJellyFinVersion()
 {
     try
     {
-        log -msg "Checking update page: https://repo.jellyfin.org/?path=/server/windows/latest-stable/$env:PROCESSOR_ARCHITECTURE)"
-        $updatePage = (Invoke-WebRequest -Uri "https://repo.jellyfin.org/?path=/server/windows/latest-stable/$env:PROCESSOR_ARCHITECTURE)").Content
+        log -msg "Checking update page: https://repo.jellyfin.org/?path=/server/windows/latest-stable/$env:PROCESSOR_ARCHITECTURE"
+        $updatePage = (Invoke-WebRequest -Uri "https://repo.jellyfin.org/?path=/server/windows/latest-stable/$env:PROCESSOR_ARCHITECTURE" -UseBasicParsing).Content
         $currentVersion = [regex]::match($updatePage,"(?<=\(v).+(?=\))").Groups[0].Value
     }
     catch
     {
-        log -msg "Failed to connect to update page: https://repo.jellyfin.org/?path=/server/windows/latest-stable/$env:PROCESSOR_ARCHITECTURE)"
-        log -msg "Exception $($_.Message)"
+        log -msg "Failed to connect to update page: https://repo.jellyfin.org/?path=/server/windows/latest-stable/$env:PROCESSOR_ARCHITECTURE"
+        log -msg "Exception $($Error[0])"
     }
     log -msg "Check-AvailableJellyFinVersion returning $currentVersion"
     return $currentVersion
@@ -90,56 +90,34 @@ log -msg "Begin update check!"
 
 if(is-newVersionAvailable)
 {
-    log -msg "Attempting to stop Jellyfin Windows Service..."
-
-    try
-    {
-        stop-service -force -Name JellyfinServer 
-    }
-    catch
-    {
-        log -msg "Failed to stop Jellyfin Windows Service!  Exception below:"
-        log -msg $_.Message        
-        exit
-    }
 
     # Next, get our upgrade package, and run it in silent upgrade mode.
     try
     {
-        Invoke-WebRequest -Uri "https://repo.jellyfin.org/?path=/server/windows/latest-stable/$env:PROCESSOR_ARCHITECTURE?path=/server/windows/latest-stable" -OutFile "$env:TEMP\JellyFinUpgrade.exe"
-    }
-    catch
-    {
-        log -msg "Failed to download JellyFin upgrade installer!  Exception below"
-        log -msg $_.Message        
-        exit
-    }
-
-    try
-    {
         log -msg "Finished download of upgrade package - executing..."
-
-        log -msg "Checking latest update page: `"https://repo.jellyfin.org/?path=/server/windows/latest-stable/$("$env:PROCESSOR_ARCHITECTURE".ToLower())`""
-        $downloadPage =  (Invoke-WebRequest -Uri "https://repo.jellyfin.org/?path=/server/windows/latest-stable/$("$env:PROCESSOR_ARCHITECTURE".ToLower())")
+        $arch = "$env:PROCESSOR_ARCHITECTURE".ToLower()
+        log -msg "Checking latest update page: `"https://repo.jellyfin.org/?path=/server/windows/latest-stable/$arch`""
+        $downloadPage =  (Invoke-WebRequest -Uri "https://repo.jellyfin.org/?path=/server/windows/latest-stable/$arch" -UseBasicParsing)
         
         $downloadLink = "https://repo.jellyfin.org$(($downloadPage.Links | where-object {$_.href -notlike "*?mirrorlist" -and $_.href -like "*.exe" })[0].href)"
 
         log -msg "Downloading latest installer: $downloadLink"
 
-        Invoke-WebRequest -Uri $downloadLink -OutFile "$env:TEMP\JellyFinUpdate.exe"
-
-        log -msg "Executing update package silent command: $env:TEMP\JellyFinUpdate.exe /S /_SERVICESTART_=No"
-        $process = start-process -FilePath "$env:TEMP\JellyFinUpdate.exe" -ArgumentList "/S /_SERVICESTART_=No"
+        Invoke-WebRequest -Uri $downloadLink -OutFile "$env:TEMP\JellyFinUpdate.exe" -UseBasicParsing
+        
+        log -msg "Executing update package silent command: $env:TEMP\JellyFinUpdate.exe /S"
+        $process = start-process -FilePath "$env:TEMP\JellyFinUpdate.exe" -ArgumentList "/S" -PassThru
         $process.WaitForExit()
-
+        
         if($process.ExitCode -ne 0)
         {
             log -msg "Logged installer failure!  Exit code: $($process.ExitCode)"
-            log -msg "Please check logfile: "
+            # log -msg "Please check logfile: $($env:TEMP)\JellyFinInstaller.log" NSIS setup doesn't create logfile, sad...
         }
 
+        #If service not running, try to start it.
         $service = Get-Service -Name JellyfinServer
-        if($service.Status -ne 'Running')
+        if($service.Status -ne 'Running' -and $service -ne $null)
         {
             log -msg "Post-upgrade Jellyfin Server service is not running!  Starting..."
             try
@@ -149,15 +127,19 @@ if(is-newVersionAvailable)
             catch
             {
                 log -msg "Failed to start Jellyfin Service!  Exception: "
-                log -msg $_.Message 
+                log -msg $Error[0]
                 Throw "Failed to start up!"
             }
+        }
+        elseif($service -eq $null)
+        {
+            log -msg "No JellyFin service detected to restart (Basic install possibly?)"
         }
     }
     catch
     {
         log -msg "Failed to download / Execute JellyFin upgrade installer!  Exception below"
-        log -msg $_.Message        
+        log -msg $Error[0]       
         exit
     }
 }
