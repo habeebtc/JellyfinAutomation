@@ -94,7 +94,6 @@ if(is-newVersionAvailable)
     # Next, get our upgrade package, and run it in silent upgrade mode.
     try
     {
-        log -msg "Finished download of upgrade package - executing..."
         $arch = "$env:PROCESSOR_ARCHITECTURE".ToLower()
         log -msg "Checking latest update page: `"https://repo.jellyfin.org/?path=/server/windows/latest-stable/$arch`""
         $downloadPage =  (Invoke-WebRequest -Uri "https://repo.jellyfin.org/?path=/server/windows/latest-stable/$arch" -UseBasicParsing)
